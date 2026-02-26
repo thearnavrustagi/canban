@@ -270,20 +270,9 @@ cargo run
 
 See the [open issues](https://github.com/thearnavrustagi/canban/issues) for things to work on, or suggest your own.
 
-## Roadmap
-
-- [ ] Custom color themes
-- [ ] Task priorities
-- [ ] Subtasks / checklists
-- [ ] Drag-and-drop with mouse support
-- [ ] Board templates
-- [ ] Undo / redo
-- [ ] Sync across machines (optional)
-- [ ] Plugin system
-
 ## License
 
-[MIT](LICENSE)
+[License](LICENSE)
 
 ---
 
