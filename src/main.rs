@@ -98,7 +98,7 @@ fn run_tui(storage: Box<dyn StorageBackend>, config: Config) -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = app::App::new(storage, config)?;
-    let events = EventHandler::new(Duration::from_millis(250));
+    let events = EventHandler::new(Duration::from_millis(80));
 
     while app.running {
         terminal.draw(|f| ui::render(f, &app))?;

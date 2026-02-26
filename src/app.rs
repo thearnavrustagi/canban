@@ -27,6 +27,8 @@ pub enum DialogKind {
     Help,
 }
 
+pub const TRANSITION_DURATION: u64 = 10;
+
 pub struct App {
     pub mode: Mode,
     pub active_board: Board,
@@ -37,8 +39,10 @@ pub struct App {
     pub input_dialog: Option<InputDialog>,
     pub board_list: Vec<String>,
     pub board_picker_idx: usize,
-    pub splash_selected: usize,
+    pub splash_boards: Vec<String>,
+    pub splash_board_idx: usize,
     pub tick: u64,
+    pub transition_start: Option<u64>,
     pub running: bool,
     pub dirty: bool,
     storage: Box<dyn StorageBackend>,
@@ -48,6 +52,7 @@ pub struct App {
 impl App {
     pub fn new(storage: Box<dyn StorageBackend>, config: Config) -> Result<Self> {
         let board = storage.load_board(&config.active_board)?;
+        let splash_boards = storage.list_boards().unwrap_or_default();
         let visible_columns = ColumnKind::ALL.to_vec();
         let num_cols = visible_columns.len();
         Ok(Self {
@@ -60,13 +65,26 @@ impl App {
             input_dialog: None,
             board_list: Vec::new(),
             board_picker_idx: 0,
-            splash_selected: 0,
+            splash_boards,
+            splash_board_idx: 0,
             tick: 0,
+            transition_start: None,
             running: true,
             dirty: false,
             storage,
             config,
         })
+    }
+
+    pub fn transition_progress(&self) -> Option<f64> {
+        self.transition_start.map(|start| {
+            let elapsed = self.tick.saturating_sub(start);
+            (elapsed as f64 / TRANSITION_DURATION as f64).min(1.0)
+        })
+    }
+
+    pub fn is_transitioning(&self) -> bool {
+        self.transition_progress().map(|p| p < 1.0).unwrap_or(false)
     }
 
     pub fn mode_label(&self) -> String {
@@ -90,12 +108,18 @@ impl App {
 
     pub fn context_hints(&self) -> Vec<(&str, &str)> {
         match &self.mode {
-            Mode::Splash => vec![
-                ("j/k", "navigate"),
-                ("Enter", "select"),
-                ("n", "new board"),
-                ("q", "quit"),
-            ],
+            Mode::Splash => {
+                let mut hints = vec![
+                    ("j/k", "navigate"),
+                    ("Enter", "open"),
+                    ("n", "new board"),
+                ];
+                if !self.splash_boards.is_empty() {
+                    hints.push(("d", "delete board"));
+                }
+                hints.push(("q", "quit"));
+                hints
+            }
             Mode::Normal => {
                 let mut hints = vec![("h/l", "cols"), ("j/k", "tasks")];
                 if self.has_task_under_cursor() {
@@ -199,41 +223,58 @@ impl App {
     }
 
     fn handle_splash(&mut self, key: KeyEvent) {
+        if self.is_transitioning() {
+            return;
+        }
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             self.running = false;
             return;
         }
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
-                self.splash_selected = (self.splash_selected + 1) % 3;
+                if !self.splash_boards.is_empty() {
+                    self.splash_board_idx =
+                        (self.splash_board_idx + 1) % self.splash_boards.len();
+                }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                self.splash_selected = if self.splash_selected == 0 {
-                    2
-                } else {
-                    self.splash_selected - 1
-                };
+                if !self.splash_boards.is_empty() {
+                    self.splash_board_idx = if self.splash_board_idx == 0 {
+                        self.splash_boards.len() - 1
+                    } else {
+                        self.splash_board_idx - 1
+                    };
+                }
             }
             KeyCode::Char('q') => self.running = false,
             KeyCode::Char('n') => self.open_new_board_dialog(),
-            KeyCode::Enter => match self.splash_selected {
-                0 => self.splash_open_board(),
-                1 => self.open_new_board_dialog(),
-                2 => self.running = false,
-                _ => {}
-            },
+            KeyCode::Char('d') => self.splash_delete_board(),
+            KeyCode::Enter => self.splash_open_selected(),
             _ => {}
         }
     }
 
-    fn splash_open_board(&mut self) {
-        let boards = self.storage.list_boards().unwrap_or_default();
-        if boards.len() <= 1 {
+    fn splash_open_selected(&mut self) {
+        if let Some(name) = self.splash_boards.get(self.splash_board_idx).cloned() {
+            self.switch_board(&name);
+            self.transition_start = Some(self.tick);
             self.mode = Mode::Normal;
         } else {
-            self.board_list = boards;
-            self.board_picker_idx = 0;
-            self.mode = Mode::Dialog(DialogKind::BoardPicker);
+            self.open_new_board_dialog();
+        }
+    }
+
+    fn splash_delete_board(&mut self) {
+        if self.splash_boards.is_empty() {
+            return;
+        }
+        let name = self.splash_boards[self.splash_board_idx].clone();
+        let _ = self.storage.delete_board(&name);
+        self.splash_boards = self.storage.list_boards().unwrap_or_default();
+        if self.splash_boards.is_empty() {
+            self.splash_board_idx = 0;
+        } else if self.splash_board_idx >= self.splash_boards.len() {
+            self.splash_board_idx = self.splash_boards.len() - 1;
         }
     }
 
@@ -251,6 +292,7 @@ impl App {
             KeyCode::Esc => {
                 self.input_dialog = None;
                 self.mode = Mode::Splash;
+                self.splash_boards = self.storage.list_boards().unwrap_or_default();
             }
             KeyCode::Enter => {
                 let name = self
@@ -263,7 +305,9 @@ impl App {
                     let board = Board::new(name.clone());
                     let _ = self.storage.save_board(&board);
                     self.switch_board(&name);
+                    self.transition_start = Some(self.tick);
                 }
+                self.splash_boards = self.storage.list_boards().unwrap_or_default();
                 self.mode = Mode::Normal;
             }
             KeyCode::Backspace => {
