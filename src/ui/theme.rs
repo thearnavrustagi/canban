@@ -116,6 +116,23 @@ pub fn vim_insert_cursor() -> Style {
     Style::default().fg(Color::Black).bg(ACCENT_YELLOW)
 }
 
+pub fn vim_visual_cursor() -> Style {
+    Style::default()
+        .fg(Color::Black)
+        .bg(Color::Rgb(230, 180, 255))
+        .add_modifier(Modifier::BOLD)
+}
+
+pub fn vim_visual_highlight() -> Style {
+    Style::default()
+        .fg(Color::Black)
+        .bg(ACCENT_MAGENTA)
+}
+
+pub fn vim_replace_cursor() -> Style {
+    Style::default().fg(Color::Black).bg(ACCENT_RED)
+}
+
 pub fn mode_badge_normal() -> Style {
     Style::default()
         .fg(Color::Black)
@@ -127,5 +144,19 @@ pub fn mode_badge_insert() -> Style {
     Style::default()
         .fg(Color::Black)
         .bg(ACCENT_GREEN)
+        .add_modifier(Modifier::BOLD)
+}
+
+pub fn mode_badge_visual() -> Style {
+    Style::default()
+        .fg(Color::Black)
+        .bg(ACCENT_MAGENTA)
+        .add_modifier(Modifier::BOLD)
+}
+
+pub fn mode_badge_replace() -> Style {
+    Style::default()
+        .fg(Color::Black)
+        .bg(ACCENT_RED)
         .add_modifier(Modifier::BOLD)
 }

@@ -7,6 +7,7 @@ use crate::config::Config;
 use crate::model::{Board, ColumnKind, Task};
 use crate::storage::StorageBackend;
 use crate::ui::dialog::{DialogVimMode, FieldState, InputDialog};
+use crate::vim::{VimAction, VimState};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
@@ -47,6 +48,7 @@ pub struct App {
     pub running: bool,
     pub dirty: bool,
     pub dialog_original_values: Vec<String>,
+    pub vim_state: VimState,
     storage: Box<dyn StorageBackend>,
     config: Config,
 }
@@ -74,6 +76,7 @@ impl App {
             running: true,
             dirty: false,
             dialog_original_values: Vec::new(),
+            vim_state: VimState::new(),
             storage,
             config,
         })
@@ -172,8 +175,8 @@ impl App {
                 match vim {
                     DialogVimMode::Normal => vec![
                         ("i/a", "insert"),
-                        ("j/k", "fields"),
-                        ("h/l", "cursor"),
+                        ("v", "visual"),
+                        ("d/c/y", "operator"),
                         ("Enter", "confirm"),
                         ("Esc", "cancel"),
                     ],
@@ -181,6 +184,16 @@ impl App {
                         ("Esc", "normal mode"),
                         ("Tab", "next field"),
                         ("Enter", "confirm"),
+                    ],
+                    DialogVimMode::Visual => vec![
+                        ("d", "cut"),
+                        ("y", "yank"),
+                        ("c", "change"),
+                        ("Esc", "cancel"),
+                    ],
+                    DialogVimMode::Replace => vec![
+                        ("type", "overwrite"),
+                        ("Esc", "normal"),
                     ],
                 }
             }
@@ -254,6 +267,7 @@ impl App {
         if !self.dialog_has_changes() {
             self.input_dialog = None;
             self.dialog_original_values.clear();
+            self.vim_state.reset();
             self.mode = Mode::Normal;
             return;
         }
@@ -264,7 +278,8 @@ impl App {
         self.mode = Mode::Dialog(DialogKind::ConfirmUnsaved { is_new, task_id });
     }
 
-    fn make_task_dialog(&self, title: &str, fields: Vec<FieldState>) -> InputDialog {
+    fn make_task_dialog(&mut self, title: &str, fields: Vec<FieldState>) -> InputDialog {
+        self.vim_state.reset();
         InputDialog {
             title: title.into(),
             fields,
@@ -723,201 +738,41 @@ impl App {
             .map(|d| d.vim_mode)
             .unwrap_or(DialogVimMode::Insert);
 
-        match vim_mode {
-            DialogVimMode::Normal => self.handle_dialog_vim_normal(key, is_new),
-            DialogVimMode::Insert => self.handle_dialog_vim_insert(key, is_new),
-        }
-    }
+        let result = {
+            let Some(ref mut dlg) = self.input_dialog else {
+                return;
+            };
+            let field = dlg.active_field_mut();
+            match vim_mode {
+                DialogVimMode::Normal => self.vim_state.handle_normal(key, field),
+                DialogVimMode::Insert => self.vim_state.handle_insert(key, field),
+                DialogVimMode::Visual => self.vim_state.handle_visual(key, field),
+                DialogVimMode::Replace => self.vim_state.handle_replace(key, field),
+            }
+        };
 
-    fn handle_dialog_vim_normal(&mut self, key: KeyEvent, is_new: bool) {
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-            self.try_cancel_dialog(is_new);
-            return;
+        if let Some(new_mode) = result.new_mode
+            && let Some(ref mut dlg) = self.input_dialog
+        {
+            dlg.vim_mode = new_mode;
         }
 
-        match key.code {
-            KeyCode::Char('i') => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.vim_mode = DialogVimMode::Insert;
-                }
-            }
-            KeyCode::Char('a') => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().move_right();
-                    dlg.vim_mode = DialogVimMode::Insert;
-                }
-            }
-            KeyCode::Char('A') => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().move_end();
-                    dlg.vim_mode = DialogVimMode::Insert;
-                }
-            }
-            KeyCode::Char('I') => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().move_home();
-                    dlg.vim_mode = DialogVimMode::Insert;
-                }
-            }
-            KeyCode::Char('h') | KeyCode::Left => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().move_left();
-                }
-            }
-            KeyCode::Char('l') | KeyCode::Right => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().move_right();
-                }
-            }
-            KeyCode::Char('j') | KeyCode::Down | KeyCode::Tab => {
+        match result.action {
+            Some(VimAction::Confirm) => self.submit_dialog(is_new),
+            Some(VimAction::Cancel) => self.try_cancel_dialog(is_new),
+            Some(VimAction::NextField) => {
+                self.vim_state.clear_undo_redo();
                 if let Some(ref mut dlg) = self.input_dialog {
                     dlg.next_field();
                 }
             }
-            KeyCode::Char('k') | KeyCode::Up | KeyCode::BackTab => {
+            Some(VimAction::PrevField) => {
+                self.vim_state.clear_undo_redo();
                 if let Some(ref mut dlg) = self.input_dialog {
                     dlg.prev_field();
                 }
             }
-            KeyCode::Char('w') => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().move_word_forward();
-                }
-            }
-            KeyCode::Char('b') => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().move_word_backward();
-                }
-            }
-            KeyCode::Char('0') | KeyCode::Home => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().move_home();
-                }
-            }
-            KeyCode::Char('$') | KeyCode::End => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().move_end();
-                }
-            }
-            KeyCode::Char('x') | KeyCode::Delete => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().delete();
-                }
-            }
-            KeyCode::Char('X') => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().backspace();
-                }
-            }
-            KeyCode::Char('C') => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    let field = dlg.active_field_mut();
-                    let pos = field.cursor;
-                    field.value.truncate(pos);
-                    dlg.vim_mode = DialogVimMode::Insert;
-                }
-            }
-            KeyCode::Char('D') => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    let field = dlg.active_field_mut();
-                    let pos = field.cursor;
-                    field.value.truncate(pos);
-                }
-            }
-            KeyCode::Char('S') | KeyCode::Char('c') => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().clear();
-                    dlg.vim_mode = DialogVimMode::Insert;
-                }
-            }
-            KeyCode::Enter => self.submit_dialog(is_new),
-            KeyCode::Esc | KeyCode::Char('q') => {
-                self.try_cancel_dialog(is_new);
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_dialog_vim_insert(&mut self, key: KeyEvent, is_new: bool) {
-        if key.modifiers.contains(KeyModifiers::CONTROL) {
-            match key.code {
-                KeyCode::Char('c') => {
-                    self.try_cancel_dialog(is_new);
-                    return;
-                }
-                KeyCode::Char('w') => {
-                    if let Some(ref mut dlg) = self.input_dialog {
-                        dlg.active_field_mut().delete_word_backward();
-                    }
-                    return;
-                }
-                KeyCode::Char('u') => {
-                    if let Some(ref mut dlg) = self.input_dialog {
-                        dlg.active_field_mut().clear();
-                    }
-                    return;
-                }
-                _ => {}
-            }
-        }
-
-        match key.code {
-            KeyCode::Esc => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.vim_mode = DialogVimMode::Normal;
-                    let field = dlg.active_field_mut();
-                    if field.cursor > 0 && field.cursor >= field.value.len() {
-                        field.move_left();
-                    }
-                }
-            }
-            KeyCode::Enter => self.submit_dialog(is_new),
-            KeyCode::Tab => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.next_field();
-                }
-            }
-            KeyCode::BackTab => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.prev_field();
-                }
-            }
-            KeyCode::Backspace => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().backspace();
-                }
-            }
-            KeyCode::Delete => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().delete();
-                }
-            }
-            KeyCode::Left => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().move_left();
-                }
-            }
-            KeyCode::Right => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().move_right();
-                }
-            }
-            KeyCode::Home => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().move_home();
-                }
-            }
-            KeyCode::End => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().move_end();
-                }
-            }
-            KeyCode::Char(c) => {
-                if let Some(ref mut dlg) = self.input_dialog {
-                    dlg.active_field_mut().insert(c);
-                }
-            }
-            _ => {}
+            None => {}
         }
     }
 
@@ -942,6 +797,7 @@ impl App {
         }
 
         self.dialog_original_values.clear();
+        self.vim_state.reset();
         self.mode = Mode::Normal;
     }
 

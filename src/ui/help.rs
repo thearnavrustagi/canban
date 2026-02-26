@@ -28,18 +28,44 @@ const BOARD_BINDINGS: &[(&str, &str)] = &[
 ];
 
 const DIALOG_NORMAL: &[(&str, &str)] = &[
-    ("i", "Insert at cursor"),
-    ("a / A", "Append / append at end"),
-    ("I", "Insert at start"),
+    ("i / a / A / I", "Enter insert mode"),
+    ("v", "Enter visual mode"),
+    ("R", "Enter replace mode"),
     ("h / l", "Move cursor left / right"),
+    ("w / b / e", "Word forward / back / end"),
+    ("0 / ^ / $", "Start / first non-blank / end"),
+    ("f / F / t / T", "Find char forward / backward"),
+    ("; / ,", "Repeat / reverse last find"),
     ("j / k", "Next / prev field"),
-    ("w / b", "Next / prev word"),
-    ("0 / $", "Start / end of field"),
-    ("x / X", "Delete / backspace"),
-    ("C", "Change to end of field"),
-    ("S / c", "Clear field & insert"),
-    ("Enter", "Confirm"),
-    ("Esc / q", "Cancel"),
+];
+
+const DIALOG_OPERATORS: &[(&str, &str)] = &[
+    ("d{motion}", "Delete (e.g. dw, d$, dd)"),
+    ("c{motion}", "Change (e.g. cw, ciw, cc)"),
+    ("y{motion}", "Yank (e.g. yw, yy)"),
+    ("x / X", "Delete char / backspace"),
+    ("s / S / C / D", "Substitute / clear / change"),
+    ("p / P", "Paste after / before cursor"),
+    ("r{char}", "Replace char under cursor"),
+    ("~", "Toggle case"),
+    ("u / Ctrl-r", "Undo / redo"),
+    (".", "Repeat last edit"),
+];
+
+const DIALOG_TEXT_OBJ: &[(&str, &str)] = &[
+    ("iw / aw", "Inner word / a word"),
+    ("i\" / a\"", "Inner / around quotes"),
+    ("i( / a(", "Inner / around parens"),
+];
+
+const DIALOG_VISUAL: &[(&str, &str)] = &[
+    ("d / x", "Delete selection"),
+    ("c / s", "Change selection"),
+    ("y", "Yank selection"),
+    ("r{char}", "Replace all in selection"),
+    ("~", "Toggle case of selection"),
+    ("o", "Swap cursor and anchor"),
+    ("Esc / v", "Exit visual mode"),
 ];
 
 const DIALOG_INSERT: &[(&str, &str)] = &[
@@ -52,7 +78,13 @@ const DIALOG_INSERT: &[(&str, &str)] = &[
 
 pub fn render(f: &mut Frame, area: Rect) {
     let width = 56u16.min(area.width.saturating_sub(4));
-    let total_lines = BOARD_BINDINGS.len() + DIALOG_NORMAL.len() + DIALOG_INSERT.len() + 6;
+    let total_lines = BOARD_BINDINGS.len()
+        + DIALOG_NORMAL.len()
+        + DIALOG_OPERATORS.len()
+        + DIALOG_TEXT_OBJ.len()
+        + DIALOG_VISUAL.len()
+        + DIALOG_INSERT.len()
+        + 14;
     let height = (total_lines as u16 + 4).min(area.height.saturating_sub(2));
 
     let [popup_area] = Layout::horizontal([Constraint::Length(width)])
@@ -69,13 +101,31 @@ pub fn render(f: &mut Frame, area: Rect) {
     }
 
     lines.push(Line::from(""));
-    lines.push(section_header("Edit Dialog ─ Normal Mode"));
+    lines.push(section_header("Dialog ─ Normal Mode"));
     for (key, desc) in DIALOG_NORMAL {
         lines.push(binding_line(key, desc));
     }
 
     lines.push(Line::from(""));
-    lines.push(section_header("Edit Dialog ─ Insert Mode"));
+    lines.push(section_header("Dialog ─ Operators & Edits"));
+    for (key, desc) in DIALOG_OPERATORS {
+        lines.push(binding_line(key, desc));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(section_header("Dialog ─ Text Objects"));
+    for (key, desc) in DIALOG_TEXT_OBJ {
+        lines.push(binding_line(key, desc));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(section_header("Dialog ─ Visual Mode"));
+    for (key, desc) in DIALOG_VISUAL {
+        lines.push(binding_line(key, desc));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(section_header("Dialog ─ Insert Mode"));
     for (key, desc) in DIALOG_INSERT {
         lines.push(binding_line(key, desc));
     }

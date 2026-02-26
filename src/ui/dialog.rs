@@ -10,6 +10,8 @@ use crate::ui::theme;
 pub enum DialogVimMode {
     Normal,
     Insert,
+    Visual,
+    Replace,
 }
 
 pub struct InputDialog {
@@ -97,14 +99,41 @@ impl FieldState {
     pub fn move_word_backward(&mut self) {
         let bytes = self.value.as_bytes();
         let mut i = self.cursor;
-        if i > 0 {
-            i -= 1;
-        }
+        i = i.saturating_sub(1);
         while i > 0 && bytes[i].is_ascii_whitespace() {
             i -= 1;
         }
         while i > 0 && !bytes[i - 1].is_ascii_whitespace() {
             i -= 1;
+        }
+        self.cursor = i;
+    }
+
+    pub fn move_word_end(&mut self) {
+        let bytes = self.value.as_bytes();
+        let len = bytes.len();
+        if self.cursor >= len {
+            return;
+        }
+        let mut i = self.cursor + 1;
+        while i < len && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        while i < len && !bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        self.cursor = if i > self.cursor + 1 {
+            i - 1
+        } else {
+            i.min(len.saturating_sub(1))
+        };
+    }
+
+    pub fn move_to_first_nonblank(&mut self) {
+        let bytes = self.value.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
         }
         self.cursor = i;
     }
@@ -161,11 +190,18 @@ impl InputDialog {
         match self.vim_mode {
             DialogVimMode::Normal => "NORMAL",
             DialogVimMode::Insert => "INSERT",
+            DialogVimMode::Visual => "VISUAL",
+            DialogVimMode::Replace => "REPLACE",
         }
     }
 }
 
-pub fn render_input_dialog(f: &mut Frame, area: Rect, dialog: &InputDialog) {
+pub fn render_input_dialog(
+    f: &mut Frame,
+    area: Rect,
+    dialog: &InputDialog,
+    visual_anchor: Option<usize>,
+) {
     let width = 64u16.min(area.width.saturating_sub(4));
     let inner_width = width.saturating_sub(2);
 
@@ -184,26 +220,30 @@ pub fn render_input_dialog(f: &mut Frame, area: Rect, dialog: &InputDialog) {
     let border_color = match dialog.vim_mode {
         DialogVimMode::Normal => theme::ACCENT_CYAN,
         DialogVimMode::Insert => theme::ACCENT_GREEN,
+        DialogVimMode::Visual => theme::ACCENT_MAGENTA,
+        DialogVimMode::Replace => theme::ACCENT_RED,
+    };
+
+    let mode_badge = match dialog.vim_mode {
+        DialogVimMode::Normal => theme::mode_badge_normal(),
+        DialogVimMode::Insert => theme::mode_badge_insert(),
+        DialogVimMode::Visual => theme::mode_badge_visual(),
+        DialogVimMode::Replace => theme::mode_badge_replace(),
+    };
+
+    let hint_text = match dialog.vim_mode {
+        DialogVimMode::Normal => " i:insert  v:visual  d/c/y:op  Enter:confirm ",
+        DialogVimMode::Insert => " Esc:normal  Tab:next field  Enter:confirm ",
+        DialogVimMode::Visual => " d:cut  y:yank  c:change  Esc:cancel ",
+        DialogVimMode::Replace => " type to overwrite  Esc:normal ",
     };
 
     let block = Block::default()
         .title(format!(" {} ", dialog.title))
         .title_bottom(Line::from(vec![
             Span::raw(" "),
-            Span::styled(
-                format!(" {} ", dialog.vim_mode_label()),
-                match dialog.vim_mode {
-                    DialogVimMode::Normal => theme::mode_badge_normal(),
-                    DialogVimMode::Insert => theme::mode_badge_insert(),
-                },
-            ),
-            Span::styled(
-                match dialog.vim_mode {
-                    DialogVimMode::Normal => " i:insert  j/k:fields  Enter:confirm  Esc:cancel ",
-                    DialogVimMode::Insert => " Esc:normal  Tab:next field  Enter:confirm ",
-                },
-                Style::default().fg(theme::FG_MUTED),
-            ),
+            Span::styled(format!(" {} ", dialog.vim_mode_label()), mode_badge),
+            Span::styled(hint_text, Style::default().fg(theme::FG_MUTED)),
         ]))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
@@ -236,7 +276,8 @@ pub fn render_input_dialog(f: &mut Frame, area: Rect, dialog: &InputDialog) {
     for (i, field) in dialog.fields.iter().enumerate() {
         let base = i * 3;
         let is_active = i == dialog.active_field;
-        render_field(f, &rows, base, field, is_active, dialog.vim_mode);
+        let anchor = if is_active { visual_anchor } else { None };
+        render_field(f, &rows, base, field, is_active, dialog.vim_mode, anchor);
     }
 
     if !dialog.tag_suggestions.is_empty() {
@@ -252,6 +293,7 @@ fn render_field(
     field: &FieldState,
     is_active: bool,
     vim_mode: DialogVimMode,
+    visual_anchor: Option<usize>,
 ) {
     let label_style = if is_active {
         Style::default()
@@ -280,32 +322,89 @@ fn render_field(
         let line = if field.value.is_empty() && !is_active {
             Line::from(Span::styled(
                 &field.placeholder,
-                Style::default().fg(theme::FG_MUTED).add_modifier(Modifier::ITALIC),
+                Style::default()
+                    .fg(theme::FG_MUTED)
+                    .add_modifier(Modifier::ITALIC),
             ))
-        } else {
-            let cursor_style = if is_active {
-                match vim_mode {
-                    DialogVimMode::Normal => theme::vim_normal_cursor(),
-                    DialogVimMode::Insert => theme::vim_insert_cursor(),
-                }
+        } else if is_active && vim_mode == DialogVimMode::Visual {
+            if let Some(anchor) = visual_anchor {
+                build_visual_line(&field.value, field.cursor, anchor)
             } else {
-                theme::input_style()
-            };
-
-            let (before, cursor_ch, after) = split_at_cursor(&field.value, field.cursor);
-            Line::from(vec![
-                Span::styled(before, theme::input_style()),
-                Span::styled(
-                    if is_active { cursor_ch } else { cursor_ch.clone() },
-                    if is_active { cursor_style } else { theme::input_style() },
-                ),
-                Span::styled(after, theme::input_style()),
-            ])
+                build_cursor_line(&field.value, field.cursor, vim_mode, true)
+            }
+        } else {
+            build_cursor_line(&field.value, field.cursor, vim_mode, is_active)
         };
         f.render_widget(
             Paragraph::new(line).wrap(Wrap { trim: false }),
             value_area,
         );
+    }
+}
+
+fn build_cursor_line(
+    value: &str,
+    cursor: usize,
+    vim_mode: DialogVimMode,
+    is_active: bool,
+) -> Line<'static> {
+    let cursor_style = if is_active {
+        match vim_mode {
+            DialogVimMode::Normal => theme::vim_normal_cursor(),
+            DialogVimMode::Insert => theme::vim_insert_cursor(),
+            DialogVimMode::Visual => theme::vim_visual_cursor(),
+            DialogVimMode::Replace => theme::vim_replace_cursor(),
+        }
+    } else {
+        theme::input_style()
+    };
+
+    let (before, cursor_ch, after) = split_at_cursor(value, cursor);
+    Line::from(vec![
+        Span::styled(before, theme::input_style()),
+        Span::styled(cursor_ch, if is_active { cursor_style } else { theme::input_style() }),
+        Span::styled(after, theme::input_style()),
+    ])
+}
+
+fn build_visual_line(value: &str, cursor: usize, anchor: usize) -> Line<'static> {
+    use crate::vim::visual_selection_range;
+
+    let (sel_lo, sel_hi) = visual_selection_range(anchor, cursor, value);
+    let sel_lo = sel_lo.min(value.len());
+    let sel_hi = sel_hi.min(value.len());
+
+    let before = value[..sel_lo].to_string();
+    let selected = value[sel_lo..sel_hi].to_string();
+    let after = value[sel_hi..].to_string();
+
+    let sel_style = theme::vim_visual_highlight();
+    let cursor_byte = cursor.min(value.len());
+
+    if cursor_byte >= sel_lo && cursor_byte < sel_hi {
+        let rel = cursor_byte - sel_lo;
+        let ch_len = value[cursor_byte..]
+            .chars()
+            .next()
+            .map(|c| c.len_utf8())
+            .unwrap_or(1)
+            .min(sel_hi - cursor_byte);
+        let sel_before = selected[..rel].to_string();
+        let cursor_ch = selected[rel..rel + ch_len].to_string();
+        let sel_after = selected[rel + ch_len..].to_string();
+        Line::from(vec![
+            Span::styled(before, theme::input_style()),
+            Span::styled(sel_before, sel_style),
+            Span::styled(cursor_ch, theme::vim_visual_cursor()),
+            Span::styled(sel_after, sel_style),
+            Span::styled(after, theme::input_style()),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled(before, theme::input_style()),
+            Span::styled(selected, sel_style),
+            Span::styled(after, theme::input_style()),
+        ])
     }
 }
 

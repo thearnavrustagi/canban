@@ -5,6 +5,7 @@ mod event;
 mod model;
 mod storage;
 mod ui;
+mod vim;
 
 use std::io;
 use std::path::PathBuf;

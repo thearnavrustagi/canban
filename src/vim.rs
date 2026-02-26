@@ -180,10 +180,10 @@ impl VimState {
     }
 
     fn record_key_if_active(&mut self, key: KeyEvent) {
-        if !self.replaying {
-            if let Some(ref mut rec) = self.recording {
-                rec.push(key);
-            }
+        if !self.replaying
+            && let Some(ref mut rec) = self.recording
+        {
+            rec.push(key);
         }
     }
 
@@ -191,13 +191,13 @@ impl VimState {
         if self.replaying {
             return;
         }
-        if let Some(keys) = self.recording.take() {
-            if !keys.is_empty() {
-                self.last_edit = Some(RecordedEdit {
-                    count: self.recording_count.take(),
-                    keys,
-                });
-            }
+        if let Some(keys) = self.recording.take()
+            && !keys.is_empty()
+        {
+            self.last_edit = Some(RecordedEdit {
+                count: self.recording_count.take(),
+                keys,
+            });
         }
         self.recording_count = None;
     }
@@ -230,12 +230,13 @@ impl VimState {
             return r;
         }
 
-        if let KeyCode::Char(ch) = key.code {
-            if ch.is_ascii_digit() && (ch != '0' || self.count_accum.is_some()) {
-                let d = ch.to_digit(10).unwrap() as usize;
-                self.count_accum = Some(self.count_accum.unwrap_or(0) * 10 + d);
-                return VimResult::handled();
-            }
+        if let KeyCode::Char(ch) = key.code
+            && ch.is_ascii_digit()
+            && (ch != '0' || self.count_accum.is_some())
+        {
+            let d = ch.to_digit(10).unwrap() as usize;
+            self.count_accum = Some(self.count_accum.unwrap_or(0) * 10 + d);
+            return VimResult::handled();
         }
 
         if let Some(op) = self.pending_op {
@@ -353,16 +354,16 @@ impl VimState {
             }
             _ => None,
         };
-        if let Some(obj) = obj {
-            if let Some((lo, hi)) = text_object_range(&field.value, field.cursor, obj) {
-                self.push_undo(field);
-                let m = apply_operator(op, field, lo, hi, self);
-                self.finish_recording();
-                if let Some(m) = m {
-                    return Some(VimResult::mode(m));
-                }
-                return Some(VimResult::handled());
+        if let Some(obj) = obj
+            && let Some((lo, hi)) = text_object_range(&field.value, field.cursor, obj)
+        {
+            self.push_undo(field);
+            let m = apply_operator(op, field, lo, hi, self);
+            self.finish_recording();
+            if let Some(m) = m {
+                return Some(VimResult::mode(m));
             }
+            return Some(VimResult::handled());
         }
         self.clear_pending();
         self.cancel_recording();
@@ -437,17 +438,16 @@ impl VimState {
             KeyCode::Char(';') => {
                 self.pending_op = None;
                 let count = self.effective_count();
-                if let Some((dir, ch)) = self.last_find {
-                    if let Some(target) =
+                if let Some((dir, ch)) = self.last_find
+                    && let Some(target) =
                         find_char_repeated(&field.value, field.cursor, dir, ch, count)
-                    {
-                        let (lo, hi) = find_operator_range(&field.value, field.cursor, target);
-                        self.push_undo(field);
-                        let m = apply_operator(op, field, lo, hi, self);
-                        self.finish_recording();
-                        if let Some(m) = m {
-                            return VimResult::mode(m);
-                        }
+                {
+                    let (lo, hi) = find_operator_range(&field.value, field.cursor, target);
+                    self.push_undo(field);
+                    let m = apply_operator(op, field, lo, hi, self);
+                    self.finish_recording();
+                    if let Some(m) = m {
+                        return VimResult::mode(m);
                     }
                 }
                 VimResult::handled()
@@ -1054,12 +1054,12 @@ impl VimState {
                 VimResult::mode(DialogVimMode::Normal)
             }
             KeyCode::Backspace => {
-                if let Some(original) = self.replace_backup.pop() {
-                    if field.cursor > 0 {
-                        field.move_left();
-                        if original != '\0' {
-                            replace_char_at(field, field.cursor, original);
-                        }
+                if let Some(original) = self.replace_backup.pop()
+                    && field.cursor > 0
+                {
+                    field.move_left();
+                    if original != '\0' {
+                        replace_char_at(field, field.cursor, original);
                     }
                 }
                 VimResult::handled()
@@ -1327,7 +1327,7 @@ fn pos_word_forward(value: &str, from: usize) -> usize {
 fn pos_word_backward(value: &str, from: usize) -> usize {
     let bytes = value.as_bytes();
     let mut i = from;
-    if i > 0 { i -= 1; }
+    i = i.saturating_sub(1);
     while i > 0 && bytes[i].is_ascii_whitespace() { i -= 1; }
     while i > 0 && !bytes[i - 1].is_ascii_whitespace() { i -= 1; }
     i
@@ -1420,10 +1420,11 @@ fn text_object_range(
                 } else if b == b')' {
                     depth -= 1;
                     if depth == 0 {
-                        if let Some(o) = open_pos {
-                            if cursor >= o && cursor <= i {
-                                return Some((o + 1, i));
-                            }
+                        if let Some(o) = open_pos
+                            && cursor >= o
+                            && cursor <= i
+                        {
+                            return Some((o + 1, i));
                         }
                         open_pos = None;
                     }

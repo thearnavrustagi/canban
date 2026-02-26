@@ -30,7 +30,7 @@ pub fn render(f: &mut Frame, app: &App) {
         Mode::Dialog(DialogKind::NewBoard) => {
             splash::render(f, app);
             if let Some(ref dlg) = app.input_dialog {
-                dialog::render_input_dialog(f, area, dlg);
+                dialog::render_input_dialog(f, area, dlg, app.vim_state.visual_anchor);
             }
             return;
         }
@@ -43,7 +43,7 @@ pub fn render(f: &mut Frame, app: &App) {
         Mode::Dialog(DialogKind::Help) => help::render(f, area),
         Mode::Dialog(DialogKind::NewTask) | Mode::Dialog(DialogKind::EditTask(_)) => {
             if let Some(ref dlg) = app.input_dialog {
-                dialog::render_input_dialog(f, area, dlg);
+                dialog::render_input_dialog(f, area, dlg, app.vim_state.visual_anchor);
             }
         }
         Mode::Dialog(DialogKind::ConfirmDelete(_)) => {
@@ -57,12 +57,12 @@ pub fn render(f: &mut Frame, app: &App) {
         }
         Mode::Search => {
             if let Some(ref dlg) = app.input_dialog {
-                dialog::render_input_dialog(f, area, dlg);
+                dialog::render_input_dialog(f, area, dlg, app.vim_state.visual_anchor);
             }
         }
         Mode::Command => {
             if let Some(ref dlg) = app.input_dialog {
-                dialog::render_input_dialog(f, area, dlg);
+                dialog::render_input_dialog(f, area, dlg, app.vim_state.visual_anchor);
             }
         }
         _ => {}
