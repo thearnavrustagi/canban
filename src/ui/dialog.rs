@@ -271,9 +271,15 @@ fn render_field(
     }
 
     if base + 1 < rows.len() {
+        let value_area = Rect {
+            x: rows[base + 1].x + 2,
+            width: rows[base + 1].width.saturating_sub(2),
+            ..rows[base + 1]
+        };
+
         let line = if field.value.is_empty() && !is_active {
             Line::from(Span::styled(
-                format!("  {}", &field.placeholder),
+                &field.placeholder,
                 Style::default().fg(theme::FG_MUTED).add_modifier(Modifier::ITALIC),
             ))
         } else {
@@ -288,7 +294,6 @@ fn render_field(
 
             let (before, cursor_ch, after) = split_at_cursor(&field.value, field.cursor);
             Line::from(vec![
-                Span::raw("  "),
                 Span::styled(before, theme::input_style()),
                 Span::styled(
                     if is_active { cursor_ch } else { cursor_ch.clone() },
@@ -299,7 +304,7 @@ fn render_field(
         };
         f.render_widget(
             Paragraph::new(line).wrap(Wrap { trim: false }),
-            rows[base + 1],
+            value_area,
         );
     }
 }
@@ -478,11 +483,11 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 }
 
 fn value_row_count(value: &str, max_width: u16) -> u16 {
-    if value.is_empty() || max_width <= 2 {
+    let w = max_width.saturating_sub(2) as usize;
+    if value.is_empty() || w == 0 {
         return 1;
     }
-    let display_len = value.len() + 3;
-    let w = max_width as usize;
+    let display_len = value.len() + 1;
     ((display_len + w - 1) / w).max(1) as u16
 }
 

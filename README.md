@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="canban logo" width="120" />
+  <img src="assets/screenshots/canban-landing.png" alt="canban splash screen" width="600" />
 </p>
 
 <h1 align="center">canban</h1>
@@ -26,9 +26,8 @@
 
 ---
 
-<!-- SCREENSHOT: Replace with a full-width screenshot of the board view with tasks in all 4 columns -->
 <p align="center">
-  <img src="assets/screenshots/board-overview.png" alt="canban board overview" width="800" />
+  <img src="assets/screenshots/kanban-page.png" alt="canban board view" width="800" />
 </p>
 
 ## Why canban?
@@ -71,46 +70,21 @@ Pre-built binaries for macOS, Linux, and Windows are available on the [Releases]
 
 Organize tasks across **Ready**, **Doing**, **Done**, and **Archived** columns — each color-coded and clearly separated.
 
-<!-- SCREENSHOT: Show the 4 columns with color-coded borders, a few tasks in each -->
-<p align="center">
-  <img src="assets/screenshots/columns.png" alt="Four color-coded columns" width="800" />
-</p>
-
 ### Vim-style everything
 
 Full vim keybindings in both board navigation and text input. Normal mode, insert mode, word motions (`w`, `b`), line motions (`0`, `$`), and operators (`C`, `x`, `S`) — all work exactly as you'd expect.
-
-<!-- SCREENSHOT: Show the task edit dialog with vim mode badge visible (NORMAL or INSERT) -->
-<p align="center">
-  <img src="assets/screenshots/vim-editing.png" alt="Vim-style modal editing" width="600" />
-</p>
 
 ### Rich task cards
 
 Each task supports a title, description, tags, and due dates. Tasks in the **Doing** column automatically track time. Overdue tasks glow red.
 
-<!-- SCREENSHOT: Close-up of a task card showing tags, due date, and time tracking -->
-<p align="center">
-  <img src="assets/screenshots/task-card.png" alt="Task card with metadata" width="400" />
-</p>
-
 ### Multiple boards
 
 Create, switch, and delete boards on the fly. Each board is stored independently — use them for different projects, contexts, or workflows.
 
-<!-- SCREENSHOT: Show the board picker dialog -->
-<p align="center">
-  <img src="assets/screenshots/board-picker.png" alt="Board picker" width="500" />
-</p>
-
 ### Search & filter
 
 Press `/` to instantly filter tasks by title, tag, or description. Results update as you type.
-
-<!-- SCREENSHOT: Show the board in search mode with a query typed and filtered results -->
-<p align="center">
-  <img src="assets/screenshots/search.png" alt="Search and filter" width="800" />
-</p>
 
 ### CSV import/export
 
@@ -122,12 +96,7 @@ Changes persist automatically. No manual saving needed (though `:w` works if you
 
 ### Splash screen
 
-A clean animated splash screen on launch.
-
-<!-- SCREENSHOT: Show the splash screen -->
-<p align="center">
-  <img src="assets/screenshots/splash.png" alt="Splash screen" width="600" />
-</p>
+A clean animated splash screen on launch with a board picker to jump straight into your project.
 
 ## Usage
 
@@ -204,11 +173,6 @@ canban import -i tasks.csv
 | `:q` / `:quit` | Quit |
 | `:w` / `:save` | Save |
 | `:wq` | Save and quit |
-
-<!-- SCREENSHOT: Show the help overlay (press ?) -->
-<p align="center">
-  <img src="assets/screenshots/help-overlay.png" alt="Help overlay" width="700" />
-</p>
 
 ## Configuration
 

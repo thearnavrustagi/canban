@@ -1,4 +1,4 @@
-use color_eyre::eyre::{Result, WrapErr};
+use color_eyre::eyre::{ensure, Result, WrapErr};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -19,6 +19,16 @@ impl JsonBackend {
 
     fn board_path(&self, name: &str) -> PathBuf {
         self.base.join(name).join("tasks.json")
+    }
+
+    pub fn rename_board(&self, old: &str, new: &str) -> Result<()> {
+        let (old_dir, new_dir) = (self.base.join(old), self.base.join(new));
+        ensure!(old_dir.exists(), "Board '{old}' not found");
+        ensure!(!new_dir.exists(), "Board '{new}' already exists");
+        fs::rename(&old_dir, &new_dir)?;
+        let mut board = self.load_board(new)?;
+        board.name = new.to_string();
+        self.save_board(&board)
     }
 }
 
