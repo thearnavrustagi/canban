@@ -5,6 +5,7 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use crate::app::App;
+use crate::ui::theme;
 
 const LOGO: &[&str] = &[
     " ██████╗ █████╗ ███╗   ██╗██████╗  █████╗ ███╗   ██╗",
@@ -100,7 +101,7 @@ fn render_board_list(f: &mut Frame, area: Rect, boards: &[String], selected: usi
     let block = Block::default()
         .title(" Boards ")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
+        .border_style(Style::default().fg(theme::ACCENT_CYAN));
 
     let inner = block.inner(centered);
     f.render_widget(block, centered);
@@ -109,7 +110,7 @@ fn render_board_list(f: &mut Frame, area: Rect, boards: &[String], selected: usi
         let empty = Paragraph::new(Line::from(Span::styled(
             "No boards yet. Press n to create one.",
             Style::default()
-                .fg(Color::DarkGray)
+                .fg(theme::FG_DIM)
                 .add_modifier(Modifier::ITALIC),
         )))
         .alignment(Alignment::Center);
@@ -135,19 +136,19 @@ fn render_board_list(f: &mut Frame, area: Rect, boards: &[String], selected: usi
         let (marker, name_style) = if is_sel {
             (
                 Span::styled(
-                    " > ",
+                    " ▸ ",
                     Style::default()
-                        .fg(Color::Cyan)
+                        .fg(theme::ACCENT_CYAN)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Style::default()
-                    .fg(Color::White)
+                    .fg(theme::FG_BRIGHT)
                     .add_modifier(Modifier::BOLD),
             )
         } else {
             (
                 Span::styled("   ", Style::default()),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme::FG_DIM),
             )
         };
 
@@ -173,12 +174,12 @@ fn render_hint(f: &mut Frame, area: Rect) {
         spans.push(Span::styled(
             (*key).to_string(),
             Style::default()
-                .fg(Color::Cyan)
+                .fg(theme::ACCENT_CYAN)
                 .add_modifier(Modifier::BOLD),
         ));
         spans.push(Span::styled(
             format!(": {desc}"),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme::FG_DIM),
         ));
     }
 

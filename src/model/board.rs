@@ -32,4 +32,15 @@ impl Board {
     pub fn column_count(&self, col: ColumnKind) -> usize {
         self.tasks.iter().filter(|t| t.column == col).count()
     }
+
+    pub fn all_tags(&self) -> Vec<String> {
+        let mut tags: Vec<String> = self
+            .tasks
+            .iter()
+            .flat_map(|t| t.tags.iter().cloned())
+            .collect();
+        tags.sort();
+        tags.dedup();
+        tags
+    }
 }

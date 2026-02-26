@@ -49,6 +49,9 @@ pub fn render(f: &mut Frame, app: &App) {
         Mode::Dialog(DialogKind::ConfirmDelete(_)) => {
             dialog::render_confirm(f, area, "Delete this task?");
         }
+        Mode::Dialog(DialogKind::ConfirmUnsaved { .. }) => {
+            dialog::render_unsaved_confirm(f, area);
+        }
         Mode::Dialog(DialogKind::BoardPicker) => {
             dialog::render_board_picker(f, area, &app.board_list, app.board_picker_idx);
         }

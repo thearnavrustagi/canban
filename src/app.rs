@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::config::Config;
 use crate::model::{Board, ColumnKind, Task};
 use crate::storage::StorageBackend;
-use crate::ui::dialog::{FieldState, InputDialog};
+use crate::ui::dialog::{DialogVimMode, FieldState, InputDialog};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
@@ -22,6 +22,7 @@ pub enum DialogKind {
     NewTask,
     EditTask(Uuid),
     ConfirmDelete(Uuid),
+    ConfirmUnsaved { is_new: bool, task_id: Option<Uuid> },
     BoardPicker,
     NewBoard,
     Help,
@@ -45,6 +46,7 @@ pub struct App {
     pub transition_start: Option<u64>,
     pub running: bool,
     pub dirty: bool,
+    pub dialog_original_values: Vec<String>,
     storage: Box<dyn StorageBackend>,
     config: Config,
 }
@@ -71,6 +73,7 @@ impl App {
             transition_start: None,
             running: true,
             dirty: false,
+            dialog_original_values: Vec::new(),
             storage,
             config,
         })
@@ -84,7 +87,9 @@ impl App {
     }
 
     pub fn is_transitioning(&self) -> bool {
-        self.transition_progress().map(|p| p < 1.0).unwrap_or(false)
+        self.transition_progress()
+            .map(|p| p < 1.0)
+            .unwrap_or(false)
     }
 
     pub fn mode_label(&self) -> String {
@@ -92,9 +97,14 @@ impl App {
             Mode::Splash => "MENU".into(),
             Mode::Normal => "NORMAL".into(),
             Mode::Dialog(DialogKind::Help) => "HELP".into(),
-            Mode::Dialog(DialogKind::NewTask) => "NEW TASK".into(),
-            Mode::Dialog(DialogKind::EditTask(_)) => "EDIT TASK".into(),
+            Mode::Dialog(DialogKind::NewTask) | Mode::Dialog(DialogKind::EditTask(_)) => {
+                self.input_dialog
+                    .as_ref()
+                    .map(|d| d.vim_mode_label().to_string())
+                    .unwrap_or_else(|| "EDIT".into())
+            }
             Mode::Dialog(DialogKind::ConfirmDelete(_)) => "CONFIRM".into(),
+            Mode::Dialog(DialogKind::ConfirmUnsaved { .. }) => "CONFIRM".into(),
             Mode::Dialog(DialogKind::BoardPicker) => "BOARDS".into(),
             Mode::Dialog(DialogKind::NewBoard) => "NEW BOARD".into(),
             Mode::Search => "SEARCH".into(),
@@ -147,13 +157,35 @@ impl App {
             Mode::Dialog(DialogKind::ConfirmDelete(_)) => {
                 vec![("y", "confirm"), ("n", "cancel")]
             }
+            Mode::Dialog(DialogKind::ConfirmUnsaved { .. }) => {
+                vec![("s", "save"), ("d", "discard"), ("Esc", "go back")]
+            }
             Mode::Dialog(DialogKind::BoardPicker) => {
                 vec![("j/k", "navigate"), ("Enter", "select"), ("Esc", "cancel")]
             }
-            Mode::Dialog(DialogKind::NewTask)
-            | Mode::Dialog(DialogKind::EditTask(_))
-            | Mode::Dialog(DialogKind::NewBoard) => {
-                vec![("Tab", "next field"), ("Enter", "confirm"), ("Esc", "cancel")]
+            Mode::Dialog(DialogKind::NewTask) | Mode::Dialog(DialogKind::EditTask(_)) => {
+                let vim = self
+                    .input_dialog
+                    .as_ref()
+                    .map(|d| d.vim_mode)
+                    .unwrap_or(DialogVimMode::Insert);
+                match vim {
+                    DialogVimMode::Normal => vec![
+                        ("i/a", "insert"),
+                        ("j/k", "fields"),
+                        ("h/l", "cursor"),
+                        ("Enter", "confirm"),
+                        ("Esc", "cancel"),
+                    ],
+                    DialogVimMode::Insert => vec![
+                        ("Esc", "normal mode"),
+                        ("Tab", "next field"),
+                        ("Enter", "confirm"),
+                    ],
+                }
+            }
+            Mode::Dialog(DialogKind::NewBoard) => {
+                vec![("Enter", "confirm"), ("Esc", "cancel")]
             }
         }
     }
@@ -204,6 +236,44 @@ impl App {
         tasks.get(idx).map(|t| t.id)
     }
 
+    fn collect_tag_suggestions(&self) -> Vec<String> {
+        self.active_board.all_tags()
+    }
+
+    fn dialog_has_changes(&self) -> bool {
+        self.input_dialog.as_ref().map_or(false, |dlg| {
+            dlg.fields.iter().enumerate().any(|(i, f)| {
+                self.dialog_original_values
+                    .get(i)
+                    .map_or(true, |orig| *orig != f.value)
+            })
+        })
+    }
+
+    fn try_cancel_dialog(&mut self, is_new: bool) {
+        if !self.dialog_has_changes() {
+            self.input_dialog = None;
+            self.dialog_original_values.clear();
+            self.mode = Mode::Normal;
+            return;
+        }
+        let task_id = match &self.mode {
+            Mode::Dialog(DialogKind::EditTask(id)) => Some(*id),
+            _ => None,
+        };
+        self.mode = Mode::Dialog(DialogKind::ConfirmUnsaved { is_new, task_id });
+    }
+
+    fn make_task_dialog(&self, title: &str, fields: Vec<FieldState>) -> InputDialog {
+        InputDialog {
+            title: title.into(),
+            fields,
+            active_field: 0,
+            vim_mode: DialogVimMode::Normal,
+            tag_suggestions: self.collect_tag_suggestions(),
+        }
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) {
         match &self.mode {
             Mode::Splash => self.handle_splash(key),
@@ -212,6 +282,11 @@ impl App {
             Mode::Dialog(DialogKind::ConfirmDelete(id)) => {
                 let id = *id;
                 self.handle_confirm_delete(key, id);
+            }
+            Mode::Dialog(DialogKind::ConfirmUnsaved { is_new, task_id }) => {
+                let is_new = *is_new;
+                let task_id = *task_id;
+                self.handle_confirm_unsaved(key, is_new, task_id);
             }
             Mode::Dialog(DialogKind::BoardPicker) => self.handle_board_picker(key),
             Mode::Dialog(DialogKind::NewTask) => self.handle_input_dialog(key, true),
@@ -283,6 +358,8 @@ impl App {
             title: "New Board".into(),
             fields: vec![FieldState::new("Board name", "")],
             active_field: 0,
+            vim_mode: DialogVimMode::Insert,
+            tag_suggestions: Vec::new(),
         });
         self.mode = Mode::Dialog(DialogKind::NewBoard);
     }
@@ -410,16 +487,20 @@ impl App {
     }
 
     fn open_new_task(&mut self) {
-        self.input_dialog = Some(InputDialog {
-            title: "New Task".into(),
-            fields: vec![
+        let dlg = self.make_task_dialog(
+            "New Task",
+            vec![
                 FieldState::new("Title", ""),
-                FieldState::new("Description", ""),
-                FieldState::new("Tags (;-separated)", ""),
-                FieldState::new("Due date (YYYY-MM-DD)", ""),
+                FieldState::new("Description", "")
+                    .with_placeholder("optional"),
+                FieldState::new("Tags", "")
+                    .with_placeholder("semicolon-separated, e.g. bug;urgent"),
+                FieldState::new("Due date", "")
+                    .with_placeholder("YYYY-MM-DD"),
             ],
-            active_field: 0,
-        });
+        );
+        self.dialog_original_values = dlg.fields.iter().map(|f| f.value.clone()).collect();
+        self.input_dialog = Some(dlg);
         self.mode = Mode::Dialog(DialogKind::NewTask);
     }
 
@@ -430,22 +511,22 @@ impl App {
         let Some(task) = self.active_board.tasks.iter().find(|t| t.id == id) else {
             return;
         };
-        self.input_dialog = Some(InputDialog {
-            title: "Edit Task".into(),
-            fields: vec![
+        let dlg = self.make_task_dialog(
+            "Edit Task",
+            vec![
                 FieldState::new("Title", &task.title),
-                FieldState::new("Description", &task.description),
-                FieldState::new("Tags (;-separated)", &task.tags.join(";")),
-                FieldState::new(
-                    "Due date (YYYY-MM-DD)",
-                    &task
-                        .due_date
-                        .map(|d| d.format("%Y-%m-%d").to_string())
-                        .unwrap_or_default(),
-                ),
+                FieldState::new("Description", &task.description)
+                    .with_placeholder("optional"),
+                FieldState::new("Tags", &task.tags.join(";"))
+                    .with_placeholder("semicolon-separated"),
+                FieldState::new("Due date", &task.due_date
+                    .map(|d| d.format("%Y-%m-%d").to_string())
+                    .unwrap_or_default())
+                    .with_placeholder("YYYY-MM-DD"),
             ],
-            active_field: 0,
-        });
+        );
+        self.dialog_original_values = dlg.fields.iter().map(|f| f.value.clone()).collect();
+        self.input_dialog = Some(dlg);
         self.mode = Mode::Dialog(DialogKind::EditTask(id));
     }
 
@@ -456,11 +537,12 @@ impl App {
         let Some(task) = self.active_board.tasks.iter().find(|t| t.id == id) else {
             return;
         };
-        self.input_dialog = Some(InputDialog {
-            title: "Rename Task".into(),
-            fields: vec![FieldState::new("Title", &task.title)],
-            active_field: 0,
-        });
+        let dlg = self.make_task_dialog(
+            "Rename Task",
+            vec![FieldState::new("Title", &task.title)],
+        );
+        self.dialog_original_values = dlg.fields.iter().map(|f| f.value.clone()).collect();
+        self.input_dialog = Some(dlg);
         self.mode = Mode::Dialog(DialogKind::EditTask(id));
     }
 
@@ -503,11 +585,13 @@ impl App {
         let Some(task) = self.active_board.tasks.iter().find(|t| t.id == id) else {
             return;
         };
-        self.input_dialog = Some(InputDialog {
-            title: "Set Tags".into(),
-            fields: vec![FieldState::new("Tags (;-separated)", &task.tags.join(";"))],
-            active_field: 0,
-        });
+        let dlg = self.make_task_dialog(
+            "Set Tags",
+            vec![FieldState::new("Tags", &task.tags.join(";"))
+                .with_placeholder("semicolon-separated, e.g. bug;urgent")],
+        );
+        self.dialog_original_values = dlg.fields.iter().map(|f| f.value.clone()).collect();
+        self.input_dialog = Some(dlg);
         self.mode = Mode::Dialog(DialogKind::EditTask(id));
     }
 
@@ -518,17 +602,19 @@ impl App {
         let Some(task) = self.active_board.tasks.iter().find(|t| t.id == id) else {
             return;
         };
-        self.input_dialog = Some(InputDialog {
-            title: "Set Due Date".into(),
-            fields: vec![FieldState::new(
-                "Due date (YYYY-MM-DD)",
+        let dlg = self.make_task_dialog(
+            "Set Due Date",
+            vec![FieldState::new(
+                "Due date",
                 &task
                     .due_date
                     .map(|d| d.format("%Y-%m-%d").to_string())
                     .unwrap_or_default(),
-            )],
-            active_field: 0,
-        });
+            )
+            .with_placeholder("YYYY-MM-DD")],
+        );
+        self.dialog_original_values = dlg.fields.iter().map(|f| f.value.clone()).collect();
+        self.input_dialog = Some(dlg);
         self.mode = Mode::Dialog(DialogKind::EditTask(id));
     }
 
@@ -537,6 +623,8 @@ impl App {
             title: "Search".into(),
             fields: vec![FieldState::new("Query", &self.search_query)],
             active_field: 0,
+            vim_mode: DialogVimMode::Insert,
+            tag_suggestions: Vec::new(),
         });
         self.mode = Mode::Search;
     }
@@ -546,6 +634,8 @@ impl App {
             title: "Command".into(),
             fields: vec![FieldState::new(":", "")],
             active_field: 0,
+            vim_mode: DialogVimMode::Insert,
+            tag_suggestions: Vec::new(),
         });
         self.mode = Mode::Command;
     }
@@ -572,6 +662,29 @@ impl App {
                 self.clamp_task_cursor();
             }
             _ => self.mode = Mode::Normal,
+        }
+    }
+
+    fn handle_confirm_unsaved(&mut self, key: KeyEvent, is_new: bool, task_id: Option<Uuid>) {
+        match key.code {
+            KeyCode::Char('s') | KeyCode::Char('y') | KeyCode::Enter => {
+                self.submit_dialog_with_id(is_new, task_id);
+            }
+            KeyCode::Char('d') | KeyCode::Char('n') => {
+                self.input_dialog = None;
+                self.dialog_original_values.clear();
+                self.mode = Mode::Normal;
+            }
+            KeyCode::Esc => {
+                if is_new {
+                    self.mode = Mode::Dialog(DialogKind::NewTask);
+                } else if let Some(id) = task_id {
+                    self.mode = Mode::Dialog(DialogKind::EditTask(id));
+                } else {
+                    self.mode = Mode::Normal;
+                }
+            }
+            _ => {}
         }
     }
 
@@ -604,14 +717,161 @@ impl App {
     }
 
     fn handle_input_dialog(&mut self, key: KeyEvent, is_new: bool) {
+        let vim_mode = self
+            .input_dialog
+            .as_ref()
+            .map(|d| d.vim_mode)
+            .unwrap_or(DialogVimMode::Insert);
+
+        match vim_mode {
+            DialogVimMode::Normal => self.handle_dialog_vim_normal(key, is_new),
+            DialogVimMode::Insert => self.handle_dialog_vim_insert(key, is_new),
+        }
+    }
+
+    fn handle_dialog_vim_normal(&mut self, key: KeyEvent, is_new: bool) {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.try_cancel_dialog(is_new);
+            return;
+        }
+
+        match key.code {
+            KeyCode::Char('i') => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.vim_mode = DialogVimMode::Insert;
+                }
+            }
+            KeyCode::Char('a') => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.active_field_mut().move_right();
+                    dlg.vim_mode = DialogVimMode::Insert;
+                }
+            }
+            KeyCode::Char('A') => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.active_field_mut().move_end();
+                    dlg.vim_mode = DialogVimMode::Insert;
+                }
+            }
+            KeyCode::Char('I') => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.active_field_mut().move_home();
+                    dlg.vim_mode = DialogVimMode::Insert;
+                }
+            }
+            KeyCode::Char('h') | KeyCode::Left => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.active_field_mut().move_left();
+                }
+            }
+            KeyCode::Char('l') | KeyCode::Right => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.active_field_mut().move_right();
+                }
+            }
+            KeyCode::Char('j') | KeyCode::Down | KeyCode::Tab => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.next_field();
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up | KeyCode::BackTab => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.prev_field();
+                }
+            }
+            KeyCode::Char('w') => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.active_field_mut().move_word_forward();
+                }
+            }
+            KeyCode::Char('b') => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.active_field_mut().move_word_backward();
+                }
+            }
+            KeyCode::Char('0') | KeyCode::Home => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.active_field_mut().move_home();
+                }
+            }
+            KeyCode::Char('$') | KeyCode::End => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.active_field_mut().move_end();
+                }
+            }
+            KeyCode::Char('x') | KeyCode::Delete => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.active_field_mut().delete();
+                }
+            }
+            KeyCode::Char('X') => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.active_field_mut().backspace();
+                }
+            }
+            KeyCode::Char('C') => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    let field = dlg.active_field_mut();
+                    let pos = field.cursor;
+                    field.value.truncate(pos);
+                    dlg.vim_mode = DialogVimMode::Insert;
+                }
+            }
+            KeyCode::Char('D') => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    let field = dlg.active_field_mut();
+                    let pos = field.cursor;
+                    field.value.truncate(pos);
+                }
+            }
+            KeyCode::Char('S') | KeyCode::Char('c') => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.active_field_mut().clear();
+                    dlg.vim_mode = DialogVimMode::Insert;
+                }
+            }
+            KeyCode::Enter => self.submit_dialog(is_new),
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.try_cancel_dialog(is_new);
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_dialog_vim_insert(&mut self, key: KeyEvent, is_new: bool) {
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('c') => {
+                    self.try_cancel_dialog(is_new);
+                    return;
+                }
+                KeyCode::Char('w') => {
+                    if let Some(ref mut dlg) = self.input_dialog {
+                        dlg.active_field_mut().delete_word_backward();
+                    }
+                    return;
+                }
+                KeyCode::Char('u') => {
+                    if let Some(ref mut dlg) = self.input_dialog {
+                        dlg.active_field_mut().clear();
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         match key.code {
             KeyCode::Esc => {
-                self.input_dialog = None;
-                self.mode = Mode::Normal;
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.vim_mode = DialogVimMode::Normal;
+                    let field = dlg.active_field_mut();
+                    if field.cursor > 0 && field.cursor >= field.value.len() {
+                        field.move_left();
+                    }
+                }
             }
-            KeyCode::Enter => {
-                self.submit_dialog(is_new);
-            }
+            KeyCode::Enter => self.submit_dialog(is_new),
             KeyCode::Tab => {
                 if let Some(ref mut dlg) = self.input_dialog {
                     dlg.next_field();
@@ -662,6 +922,14 @@ impl App {
     }
 
     fn submit_dialog(&mut self, is_new: bool) {
+        let edit_id = match &self.mode {
+            Mode::Dialog(DialogKind::EditTask(id)) => Some(*id),
+            _ => None,
+        };
+        self.submit_dialog_with_id(is_new, edit_id);
+    }
+
+    fn submit_dialog_with_id(&mut self, is_new: bool, edit_id: Option<Uuid>) {
         let Some(dlg) = self.input_dialog.take() else {
             self.mode = Mode::Normal;
             return;
@@ -669,10 +937,11 @@ impl App {
 
         if is_new {
             self.create_task_from_dialog(&dlg);
-        } else if let Mode::Dialog(DialogKind::EditTask(id)) = &self.mode {
-            self.apply_edit_from_dialog(*id, &dlg);
+        } else if let Some(id) = edit_id {
+            self.apply_edit_from_dialog(id, &dlg);
         }
 
+        self.dialog_original_values.clear();
         self.mode = Mode::Normal;
     }
 
@@ -701,10 +970,8 @@ impl App {
                 task.tags = parse_tags(&val);
             } else if dlg.title.contains("Due") {
                 task.due_date = parse_date(&val);
-            } else {
-                if !val.is_empty() {
-                    task.title = val;
-                }
+            } else if !val.is_empty() {
+                task.title = val;
             }
         } else {
             let title = field_value(dlg, 0);

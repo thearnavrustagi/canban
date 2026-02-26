@@ -1,5 +1,5 @@
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState};
 use ratatui::Frame;
@@ -22,32 +22,44 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_header(f: &mut Frame, app: &App, area: Rect) {
-    let title = format!(" canban │ Board: {} ", app.active_board.name);
+    let board_name = &app.active_board.name;
+    let search_indicator = if !app.search_query.is_empty() {
+        format!("  /{}", app.search_query)
+    } else {
+        String::new()
+    };
+
     let line = Line::from(vec![
-        Span::styled(title, theme::header_style()),
+        Span::styled(" canban", Style::default().fg(theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
+        Span::styled(" │ ", Style::default().fg(theme::FG_MUTED)),
+        Span::styled(board_name.to_string(), theme::header_style()),
+        Span::styled(search_indicator, Style::default().fg(theme::ACCENT_YELLOW)),
         Span::raw("  "),
-        Span::styled("[?] Help", Style::default().fg(Color::DarkGray)),
+        Span::styled("[?] Help", Style::default().fg(theme::FG_MUTED)),
     ]);
     f.render_widget(
-        Paragraph::new(line).style(Style::default().bg(Color::Rgb(30, 30, 40))),
+        Paragraph::new(line).style(Style::default().bg(theme::BG_MID)),
         area,
     );
 }
 
 fn render_footer(f: &mut Frame, area: Rect, mode_label: &str, hints: &[(&str, &str)]) {
+    let mode_style = if mode_label == "INSERT" {
+        theme::mode_badge_insert()
+    } else {
+        theme::mode_badge_normal()
+    };
+
     let mut spans = vec![Span::styled(
-        format!(" [{mode_label}] "),
-        Style::default()
-            .fg(Color::Black)
-            .bg(Color::Cyan)
-            .add_modifier(Modifier::BOLD),
+        format!(" {mode_label} "),
+        mode_style,
     )];
 
     for (i, (key, desc)) in hints.iter().enumerate() {
         if i > 0 {
             spans.push(Span::styled(
-                " | ",
-                Style::default().fg(Color::Rgb(100, 100, 120)),
+                " │ ",
+                Style::default().fg(theme::FG_MUTED),
             ));
         } else {
             spans.push(Span::raw(" "));
@@ -55,18 +67,18 @@ fn render_footer(f: &mut Frame, area: Rect, mode_label: &str, hints: &[(&str, &s
         spans.push(Span::styled(
             (*key).to_string(),
             Style::default()
-                .fg(Color::Yellow)
+                .fg(theme::ACCENT_YELLOW)
                 .add_modifier(Modifier::BOLD),
         ));
         spans.push(Span::styled(
             format!(": {desc}"),
-            Style::default().fg(Color::Rgb(180, 180, 190)),
+            Style::default().fg(theme::FG_DIM),
         ));
     }
 
     let line = Line::from(spans);
     f.render_widget(
-        Paragraph::new(line).style(Style::default().bg(Color::Rgb(25, 25, 35))),
+        Paragraph::new(line).style(Style::default().bg(theme::BG_DARK)),
         area,
     );
 }
@@ -99,13 +111,18 @@ fn render_single_column(
     is_selected: bool,
 ) {
     let count = app.active_board.column_count(col);
-    let title = format!(" {} ({}) ", col, count);
+    let icon = theme::column_icon(col);
+    let title = format!(" {icon} {} ({count}) ", col);
     let border_style = theme::column_style(col, is_selected);
 
     let block = Block::default()
-        .title(title)
+        .title(Span::styled(title, border_style))
         .borders(Borders::ALL)
-        .border_style(border_style);
+        .border_style(if is_selected {
+            border_style
+        } else {
+            Style::default().fg(theme::FG_MUTED)
+        });
 
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -137,7 +154,7 @@ fn render_single_column(
         let lines = card::render_card(task, is_task_selected, inner.width);
 
         let style = if is_task_selected {
-            Style::default().bg(Color::Rgb(50, 50, 70))
+            Style::default().bg(theme::BG_RAISED)
         } else {
             Style::default()
         };
@@ -147,11 +164,14 @@ fn render_single_column(
     }
 
     if tasks.len() > visible_count {
+        let col_color = theme::column_color(col);
         let mut sb_state = ScrollbarState::new(tasks.len())
             .position(scroll_offset)
             .viewport_content_length(visible_count);
         f.render_stateful_widget(
-            Scrollbar::new(ScrollbarOrientation::VerticalRight),
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .thumb_style(Style::default().fg(col_color))
+                .track_style(Style::default().fg(theme::FG_MUTED)),
             area,
             &mut sb_state,
         );
@@ -185,7 +205,7 @@ fn render_empty_placeholder(f: &mut Frame, inner: Rect, col: ColumnKind, is_sele
             Line::from(""),
             Line::from(Span::styled(
                 "No tasks",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme::FG_DIM),
             )),
             Line::from(Span::styled(
                 "n: add task",
@@ -200,9 +220,9 @@ fn render_empty_placeholder(f: &mut Frame, inner: Rect, col: ColumnKind, is_sele
         let y = inner.y + inner.height / 2;
         let text_area = Rect::new(inner.x, y, inner.width, 1);
         let para = Paragraph::new(Line::from(Span::styled(
-            "empty",
+            "─",
             Style::default()
-                .fg(Color::DarkGray)
+                .fg(theme::FG_MUTED)
                 .add_modifier(Modifier::DIM),
         )))
         .alignment(Alignment::Center);
