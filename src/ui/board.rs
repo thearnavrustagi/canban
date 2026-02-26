@@ -45,25 +45,28 @@ fn render_footer(f: &mut Frame, area: Rect, mode_label: &str, hints: &[(&str, &s
 
     for (i, (key, desc)) in hints.iter().enumerate() {
         if i > 0 {
-            spans.push(Span::styled(" │ ", Style::default().fg(Color::Rgb(60, 60, 70))));
+            spans.push(Span::styled(
+                " | ",
+                Style::default().fg(Color::Rgb(100, 100, 120)),
+            ));
         } else {
             spans.push(Span::raw(" "));
         }
         spans.push(Span::styled(
             (*key).to_string(),
             Style::default()
-                .fg(Color::Cyan)
+                .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         ));
         spans.push(Span::styled(
             format!(": {desc}"),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(Color::Rgb(180, 180, 190)),
         ));
     }
 
     let line = Line::from(spans);
     f.render_widget(
-        Paragraph::new(line).style(Style::default().bg(Color::Rgb(30, 30, 40))),
+        Paragraph::new(line).style(Style::default().bg(Color::Rgb(25, 25, 35))),
         area,
     );
 }
