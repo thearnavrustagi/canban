@@ -1,4 +1,4 @@
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState};
@@ -18,7 +18,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
     render_header(f, app, header);
     render_columns(f, app, body);
-    render_footer(f, footer, &app.mode_label());
+    render_footer(f, footer, &app.mode_label(), &app.context_hints());
 }
 
 fn render_header(f: &mut Frame, app: &App, area: Rect) {
@@ -34,18 +34,34 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
     );
 }
 
-fn render_footer(f: &mut Frame, area: Rect, mode_label: &str) {
-    let hints = " h/l: cols │ j/k: tasks │ n: new │ Space: advance │ ?: help ";
-    let line = Line::from(vec![
-        Span::styled(
-            format!(" [{mode_label}] "),
+fn render_footer(f: &mut Frame, area: Rect, mode_label: &str, hints: &[(&str, &str)]) {
+    let mut spans = vec![Span::styled(
+        format!(" [{mode_label}] "),
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )];
+
+    for (i, (key, desc)) in hints.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" │ ", Style::default().fg(Color::Rgb(60, 60, 70))));
+        } else {
+            spans.push(Span::raw(" "));
+        }
+        spans.push(Span::styled(
+            (*key).to_string(),
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Cyan)
+                .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(hints, theme::footer_style()),
-    ]);
+        ));
+        spans.push(Span::styled(
+            format!(": {desc}"),
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
+
+    let line = Line::from(spans);
     f.render_widget(
         Paragraph::new(line).style(Style::default().bg(Color::Rgb(30, 30, 40))),
         area,
@@ -93,6 +109,7 @@ fn render_single_column(
 
     let tasks = app.filtered_tasks_in_column(col);
     if tasks.is_empty() {
+        render_empty_placeholder(f, inner, col, is_selected);
         return;
     }
 
@@ -135,6 +152,58 @@ fn render_single_column(
             area,
             &mut sb_state,
         );
+    }
+}
+
+fn render_empty_placeholder(f: &mut Frame, inner: Rect, col: ColumnKind, is_selected: bool) {
+    if inner.height < 3 || inner.width < 10 {
+        return;
+    }
+
+    if is_selected {
+        let box_w = 22u16.min(inner.width);
+        let box_h = 5u16.min(inner.height);
+        let x = inner.x + inner.width.saturating_sub(box_w) / 2;
+        let y = inner.y + inner.height.saturating_sub(box_h) / 2;
+        let placeholder_area = Rect::new(x, y, box_w, box_h);
+
+        let col_color = theme::column_color(col);
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(
+                Style::default()
+                    .fg(col_color)
+                    .add_modifier(Modifier::DIM),
+            );
+        let block_inner = block.inner(placeholder_area);
+        f.render_widget(block, placeholder_area);
+
+        let lines = vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "No tasks",
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(Span::styled(
+                "n: add task",
+                Style::default()
+                    .fg(col_color)
+                    .add_modifier(Modifier::BOLD),
+            )),
+        ];
+        let para = Paragraph::new(lines).alignment(Alignment::Center);
+        f.render_widget(para, block_inner);
+    } else {
+        let y = inner.y + inner.height / 2;
+        let text_area = Rect::new(inner.x, y, inner.width, 1);
+        let para = Paragraph::new(Line::from(Span::styled(
+            "empty",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::DIM),
+        )))
+        .alignment(Alignment::Center);
+        f.render_widget(para, text_area);
     }
 }
 

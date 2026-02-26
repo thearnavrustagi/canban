@@ -103,6 +103,8 @@ fn run_tui(storage: Box<dyn StorageBackend>, config: Config) -> Result<()> {
     while app.running {
         terminal.draw(|f| ui::render(f, &app))?;
 
+        app.tick = app.tick.wrapping_add(1);
+
         match events.next()? {
             Event::Key(key) => app.handle_key(key),
             Event::Tick => app.auto_save(),

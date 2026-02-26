@@ -10,6 +10,7 @@ use crate::ui::dialog::{FieldState, InputDialog};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
+    Splash,
     Normal,
     Dialog(DialogKind),
     Search,
@@ -22,6 +23,7 @@ pub enum DialogKind {
     EditTask(Uuid),
     ConfirmDelete(Uuid),
     BoardPicker,
+    NewBoard,
     Help,
 }
 
@@ -35,6 +37,8 @@ pub struct App {
     pub input_dialog: Option<InputDialog>,
     pub board_list: Vec<String>,
     pub board_picker_idx: usize,
+    pub splash_selected: usize,
+    pub tick: u64,
     pub running: bool,
     pub dirty: bool,
     storage: Box<dyn StorageBackend>,
@@ -47,7 +51,7 @@ impl App {
         let visible_columns = ColumnKind::ALL.to_vec();
         let num_cols = visible_columns.len();
         Ok(Self {
-            mode: Mode::Normal,
+            mode: Mode::Splash,
             active_board: board,
             visible_columns,
             selected_column: 0,
@@ -56,6 +60,8 @@ impl App {
             input_dialog: None,
             board_list: Vec::new(),
             board_picker_idx: 0,
+            splash_selected: 0,
+            tick: 0,
             running: true,
             dirty: false,
             storage,
@@ -65,14 +71,66 @@ impl App {
 
     pub fn mode_label(&self) -> String {
         match &self.mode {
+            Mode::Splash => "MENU".into(),
             Mode::Normal => "NORMAL".into(),
             Mode::Dialog(DialogKind::Help) => "HELP".into(),
             Mode::Dialog(DialogKind::NewTask) => "NEW TASK".into(),
             Mode::Dialog(DialogKind::EditTask(_)) => "EDIT TASK".into(),
             Mode::Dialog(DialogKind::ConfirmDelete(_)) => "CONFIRM".into(),
             Mode::Dialog(DialogKind::BoardPicker) => "BOARDS".into(),
+            Mode::Dialog(DialogKind::NewBoard) => "NEW BOARD".into(),
             Mode::Search => "SEARCH".into(),
             Mode::Command => "COMMAND".into(),
+        }
+    }
+
+    pub fn has_task_under_cursor(&self) -> bool {
+        self.selected_task_id().is_some()
+    }
+
+    pub fn context_hints(&self) -> Vec<(&str, &str)> {
+        match &self.mode {
+            Mode::Splash => vec![
+                ("j/k", "navigate"),
+                ("Enter", "select"),
+                ("n", "new board"),
+                ("q", "quit"),
+            ],
+            Mode::Normal => {
+                let mut hints = vec![("h/l", "cols"), ("j/k", "tasks")];
+                if self.has_task_under_cursor() {
+                    hints.extend_from_slice(&[
+                        ("Enter", "edit"),
+                        ("d", "delete"),
+                        ("Space", "advance"),
+                        ("M", "move back"),
+                        ("t", "tag"),
+                        ("D", "due date"),
+                    ]);
+                }
+                hints.extend_from_slice(&[
+                    ("n", "new task"),
+                    ("/", "search"),
+                    ("b", "boards"),
+                    ("?", "help"),
+                    ("q", "quit"),
+                ]);
+                hints
+            }
+            Mode::Search => vec![("Enter", "apply"), ("Esc", "cancel")],
+            Mode::Command => vec![("Enter", "run"), ("Esc", "cancel")],
+            Mode::Dialog(DialogKind::Help) => vec![("Esc", "close"), ("?", "close")],
+            Mode::Dialog(DialogKind::ConfirmDelete(_)) => {
+                vec![("y", "confirm"), ("n", "cancel")]
+            }
+            Mode::Dialog(DialogKind::BoardPicker) => {
+                vec![("j/k", "navigate"), ("Enter", "select"), ("Esc", "cancel")]
+            }
+            Mode::Dialog(DialogKind::NewTask)
+            | Mode::Dialog(DialogKind::EditTask(_))
+            | Mode::Dialog(DialogKind::NewBoard) => {
+                vec![("Tab", "next field"), ("Enter", "confirm"), ("Esc", "cancel")]
+            }
         }
     }
 
@@ -124,6 +182,7 @@ impl App {
 
     pub fn handle_key(&mut self, key: KeyEvent) {
         match &self.mode {
+            Mode::Splash => self.handle_splash(key),
             Mode::Normal => self.handle_normal(key),
             Mode::Dialog(DialogKind::Help) => self.handle_help(key),
             Mode::Dialog(DialogKind::ConfirmDelete(id)) => {
@@ -133,8 +192,91 @@ impl App {
             Mode::Dialog(DialogKind::BoardPicker) => self.handle_board_picker(key),
             Mode::Dialog(DialogKind::NewTask) => self.handle_input_dialog(key, true),
             Mode::Dialog(DialogKind::EditTask(_)) => self.handle_input_dialog(key, false),
+            Mode::Dialog(DialogKind::NewBoard) => self.handle_new_board_dialog(key),
             Mode::Search => self.handle_search(key),
             Mode::Command => self.handle_command(key),
+        }
+    }
+
+    fn handle_splash(&mut self, key: KeyEvent) {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.running = false;
+            return;
+        }
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.splash_selected = (self.splash_selected + 1) % 3;
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.splash_selected = if self.splash_selected == 0 {
+                    2
+                } else {
+                    self.splash_selected - 1
+                };
+            }
+            KeyCode::Char('q') => self.running = false,
+            KeyCode::Char('n') => self.open_new_board_dialog(),
+            KeyCode::Enter => match self.splash_selected {
+                0 => self.splash_open_board(),
+                1 => self.open_new_board_dialog(),
+                2 => self.running = false,
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+
+    fn splash_open_board(&mut self) {
+        let boards = self.storage.list_boards().unwrap_or_default();
+        if boards.len() <= 1 {
+            self.mode = Mode::Normal;
+        } else {
+            self.board_list = boards;
+            self.board_picker_idx = 0;
+            self.mode = Mode::Dialog(DialogKind::BoardPicker);
+        }
+    }
+
+    fn open_new_board_dialog(&mut self) {
+        self.input_dialog = Some(InputDialog {
+            title: "New Board".into(),
+            fields: vec![FieldState::new("Board name", "")],
+            active_field: 0,
+        });
+        self.mode = Mode::Dialog(DialogKind::NewBoard);
+    }
+
+    fn handle_new_board_dialog(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.input_dialog = None;
+                self.mode = Mode::Splash;
+            }
+            KeyCode::Enter => {
+                let name = self
+                    .input_dialog
+                    .as_ref()
+                    .map(|d| d.fields[0].value.trim().to_string())
+                    .unwrap_or_default();
+                self.input_dialog = None;
+                if !name.is_empty() {
+                    let board = Board::new(name.clone());
+                    let _ = self.storage.save_board(&board);
+                    self.switch_board(&name);
+                }
+                self.mode = Mode::Normal;
+            }
+            KeyCode::Backspace => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.active_field_mut().backspace();
+                }
+            }
+            KeyCode::Char(c) => {
+                if let Some(ref mut dlg) = self.input_dialog {
+                    dlg.active_field_mut().insert(c);
+                }
+            }
+            _ => {}
         }
     }
 

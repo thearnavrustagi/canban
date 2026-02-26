@@ -2,6 +2,7 @@ pub mod board;
 pub mod card;
 pub mod dialog;
 pub mod help;
+pub mod splash;
 pub mod theme;
 
 use ratatui::Frame;
@@ -10,6 +11,22 @@ use crate::app::{App, DialogKind, Mode};
 
 pub fn render(f: &mut Frame, app: &App) {
     let area = f.area();
+
+    match &app.mode {
+        Mode::Splash => {
+            splash::render(f, app);
+            return;
+        }
+        Mode::Dialog(DialogKind::NewBoard) => {
+            splash::render(f, app);
+            if let Some(ref dlg) = app.input_dialog {
+                dialog::render_input_dialog(f, area, dlg);
+            }
+            return;
+        }
+        _ => {}
+    }
+
     board::render(f, app, area);
 
     match &app.mode {

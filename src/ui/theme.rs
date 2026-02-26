@@ -55,6 +55,7 @@ pub fn header_style() -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
+#[allow(dead_code)]
 pub fn footer_style() -> Style {
     Style::default().fg(Color::DarkGray)
 }
