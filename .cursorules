@@ -1,0 +1,23 @@
+## Rules
+
+### Package Managers
+- Cargo
+
+### Code Style
+- **Modularity**: No function doing computation should exceed 8 lines. Break it down.
+- **Conciseness**: Explain changes concisely and to the point.
+- **Conventions**: Ensure you always follow https://doc.rust-lang.org/style-guide/
+
+
+### Prompts
+- Store all prompts in `prompts/` as `.yaml` files.
+- Required keys: `system` (can be empty string) and `user`.
+
+### Deployment
+- Update `docker-compose.yml` immediately if you make changes affecting deployment settings.
+
+### Testing
+- **Requirement**: New functionalities must have tests.
+- **Backend**: Write tests in `backend/tests/` using `pytest`.
+- **Frontend**: Write tests in `frontend/__tests__/` using `jest`.
+- **CI**: Tests run on git commit via pre-commit hooks.
