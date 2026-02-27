@@ -424,13 +424,10 @@ fn render_tag_suggestions(f: &mut Frame, rows: &[Rect], base: usize, suggestions
             .iter()
             .enumerate()
             .flat_map(|(i, tag)| {
-                let color = theme::tag_color(i);
-                let mut s = vec![Span::styled(
-                    format!(" #{tag} "),
-                    Style::default().fg(color),
-                )];
+                let style = theme::tag_style(tag);
+                let mut s = vec![Span::styled(format!(" #{tag} "), style)];
                 if i + 1 < suggestions.len() {
-                    s.push(Span::styled("·", Style::default().fg(theme::FG_MUTED)));
+                    s.push(Span::styled(" ", Style::default()));
                 }
                 s
             })

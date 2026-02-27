@@ -65,3 +65,37 @@ impl Task {
             .unwrap_or(false)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_task_creation() {
+        let task = Task::new("Test Task".into(), ColumnKind::Ready);
+        assert_eq!(task.title, "Test Task");
+        assert_eq!(task.column, ColumnKind::Ready);
+        assert_eq!(task.time_in_doing_secs, 0);
+        assert!(task.doing_since.is_none());
+    }
+
+    #[test]
+    fn test_task_move_to_doing() {
+        let mut task = Task::new("Test".into(), ColumnKind::Ready);
+        task.move_to(ColumnKind::Doing);
+        
+        assert_eq!(task.column, ColumnKind::Doing);
+        assert!(task.doing_since.is_some());
+    }
+
+    #[test]
+    fn test_task_move_out_of_doing() {
+        let mut task = Task::new("Test".into(), ColumnKind::Doing);
+        task.doing_since = Some(Utc::now() - chrono::Duration::seconds(10));
+        
+        task.move_to(ColumnKind::Done);
+        assert_eq!(task.column, ColumnKind::Done);
+        assert!(task.doing_since.is_none());
+        assert!(task.time_in_doing_secs >= 10);
+    }
+}

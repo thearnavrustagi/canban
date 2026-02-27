@@ -24,16 +24,10 @@ pub fn render_card(task: &Task, selected: bool, width: u16) -> Vec<Line<'static>
     if !task.tags.is_empty() {
         let mut spans: Vec<Span> = vec![Span::raw("  ")];
         for (i, tag) in task.tags.iter().enumerate() {
-            let color = theme::tag_color(i);
-            spans.push(Span::styled(
-                format!("#{tag}"),
-                ratatui::style::Style::default().fg(color),
-            ));
+            let style = theme::tag_style(tag);
+            spans.push(Span::styled(format!(" #{tag} "), style));
             if i + 1 < task.tags.len() {
-                spans.push(Span::styled(
-                    " ",
-                    ratatui::style::Style::default().fg(theme::FG_MUTED),
-                ));
+                spans.push(Span::raw(" "));
             }
         }
         let tag_line = Line::from(truncate_spans(spans, inner_w));

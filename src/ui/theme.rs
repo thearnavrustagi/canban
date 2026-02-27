@@ -20,19 +20,21 @@ pub const ACCENT_RED: Color = Color::Rgb(240, 90, 90);
 #[allow(dead_code)]
 pub const ACCENT_ORANGE: Color = Color::Rgb(240, 160, 80);
 
-pub const TAG_COLORS: &[Color] = &[
-    Color::Rgb(200, 120, 220),
-    Color::Rgb(80, 180, 220),
-    Color::Rgb(240, 160, 80),
-    Color::Rgb(120, 220, 160),
-    Color::Rgb(220, 120, 140),
-    Color::Rgb(160, 160, 240),
-    Color::Rgb(200, 200, 100),
-    Color::Rgb(100, 200, 200),
+pub const TAG_COLORS: &[(Color, Color)] = &[
+    (Color::Rgb(240, 180, 255), Color::Rgb(60, 25, 70)),
+    (Color::Rgb(140, 215, 245), Color::Rgb(20, 50, 70)),
+    (Color::Rgb(255, 195, 120), Color::Rgb(70, 40, 15)),
+    (Color::Rgb(160, 240, 190), Color::Rgb(20, 60, 35)),
+    (Color::Rgb(245, 160, 180), Color::Rgb(70, 25, 35)),
+    (Color::Rgb(190, 190, 255), Color::Rgb(35, 35, 75)),
+    (Color::Rgb(235, 225, 140), Color::Rgb(60, 55, 20)),
+    (Color::Rgb(140, 225, 225), Color::Rgb(20, 60, 60)),
 ];
 
-pub fn tag_color(idx: usize) -> Color {
-    TAG_COLORS[idx % TAG_COLORS.len()]
+pub fn tag_style(name: &str) -> Style {
+    let hash = name.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+    let (fg, bg) = TAG_COLORS[hash as usize % TAG_COLORS.len()];
+    Style::default().fg(fg).bg(bg)
 }
 
 pub fn column_color(col: ColumnKind) -> Color {
@@ -72,11 +74,6 @@ pub fn card_style(selected: bool) -> Style {
     } else {
         Style::default().fg(FG_TEXT)
     }
-}
-
-#[allow(dead_code)]
-pub fn tag_style() -> Style {
-    Style::default().fg(ACCENT_MAGENTA)
 }
 
 pub fn overdue_style() -> Style {

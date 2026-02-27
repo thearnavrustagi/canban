@@ -1542,11 +1542,11 @@ mod tests {
 
         let _ = state.handle_normal(key_char('d'), &mut field);
         let _ = state.handle_normal(key_char('w'), &mut field);
-        assert_eq!(field.value, " world");
+        assert_eq!(field.value, "world");
         assert_eq!(field.cursor, 0);
 
         let _ = state.handle_normal(key_char('x'), &mut field);
-        assert_eq!(field.value, "world");
+        assert_eq!(field.value, "orld");
         assert_eq!(field.cursor, 0);
     }
 

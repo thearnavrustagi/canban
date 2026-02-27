@@ -409,3 +409,47 @@ fn run_tui(storage: Box<dyn StorageBackend>, config: Config, skip_splash: bool) 
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn verify_cli() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn test_cli_open() {
+        let args = Cli::try_parse_from(&["canban", "-o", "myboard"]).unwrap();
+        assert_eq!(args.open, Some("myboard".to_string()));
+        assert!(args.command.is_none());
+    }
+
+    #[test]
+    fn test_cli_add() {
+        let args = Cli::try_parse_from(&["canban", "add", "my task", "-b", "board1", "-c", "doing"]).unwrap();
+        if let Some(Commands::Add { title, board, column, tags, due }) = args.command {
+            assert_eq!(title, "my task");
+            assert_eq!(board, Some("board1".to_string()));
+            assert_eq!(column, "doing");
+            assert_eq!(tags, None);
+            assert_eq!(due, None);
+        } else {
+            panic!("Expected Add command");
+        }
+    }
+
+    #[test]
+    fn test_cli_new() {
+        let args = Cli::try_parse_from(&["canban", "new", "Project X"]).unwrap();
+        if let Some(Commands::New { name }) = args.command {
+            assert_eq!(name, "Project X");
+        } else {
+            panic!("Expected New command");
+        }
+    }
+}
+
