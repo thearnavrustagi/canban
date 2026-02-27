@@ -342,12 +342,12 @@ fn render_field(
     }
 }
 
-fn build_cursor_line(
-    value: &str,
+fn build_cursor_line<'a>(
+    value: &'a str,
     cursor: usize,
     vim_mode: DialogVimMode,
     is_active: bool,
-) -> Line<'static> {
+) -> Line<'a> {
     let cursor_style = if is_active {
         match vim_mode {
             DialogVimMode::Normal => theme::vim_normal_cursor(),
@@ -367,16 +367,16 @@ fn build_cursor_line(
     ])
 }
 
-fn build_visual_line(value: &str, cursor: usize, anchor: usize) -> Line<'static> {
+fn build_visual_line<'a>(value: &'a str, cursor: usize, anchor: usize) -> Line<'a> {
     use crate::vim::visual_selection_range;
 
     let (sel_lo, sel_hi) = visual_selection_range(anchor, cursor, value);
     let sel_lo = sel_lo.min(value.len());
     let sel_hi = sel_hi.min(value.len());
 
-    let before = value[..sel_lo].to_string();
-    let selected = value[sel_lo..sel_hi].to_string();
-    let after = value[sel_hi..].to_string();
+    let before = &value[..sel_lo];
+    let selected = &value[sel_lo..sel_hi];
+    let after = &value[sel_hi..];
 
     let sel_style = theme::vim_visual_highlight();
     let cursor_byte = cursor.min(value.len());
@@ -389,9 +389,9 @@ fn build_visual_line(value: &str, cursor: usize, anchor: usize) -> Line<'static>
             .map(|c| c.len_utf8())
             .unwrap_or(1)
             .min(sel_hi - cursor_byte);
-        let sel_before = selected[..rel].to_string();
-        let cursor_ch = selected[rel..rel + ch_len].to_string();
-        let sel_after = selected[rel + ch_len..].to_string();
+        let sel_before = &selected[..rel];
+        let cursor_ch = &selected[rel..rel + ch_len];
+        let sel_after = &selected[rel + ch_len..];
         Line::from(vec![
             Span::styled(before, theme::input_style()),
             Span::styled(sel_before, sel_style),
@@ -590,14 +590,14 @@ fn value_row_count(value: &str, max_width: u16) -> u16 {
     ((display_len + w - 1) / w).max(1) as u16
 }
 
-fn split_at_cursor(s: &str, cursor: usize) -> (String, String, String) {
-    let before = s[..cursor].to_string();
+fn split_at_cursor(s: &str, cursor: usize) -> (&str, &str, &str) {
+    let before = &s[..cursor];
     if cursor < s.len() {
         let ch_len = s[cursor..].chars().next().map(|c| c.len_utf8()).unwrap_or(0);
-        let ch = s[cursor..cursor + ch_len].to_string();
-        let after = s[cursor + ch_len..].to_string();
+        let ch = &s[cursor..cursor + ch_len];
+        let after = &s[cursor + ch_len..];
         (before, ch, after)
     } else {
-        (before, " ".to_string(), String::new())
+        (before, " ", "")
     }
 }

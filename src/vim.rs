@@ -1493,3 +1493,75 @@ pub fn visual_selection_range(anchor: usize, cursor: usize, value: &str) -> (usi
 fn visual_range(anchor: usize, cursor: usize, value: &str) -> (usize, usize) {
     visual_selection_range(anchor, cursor, value)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, KeyEventKind, KeyEventState};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        }
+    }
+
+    fn key_char(c: char) -> KeyEvent {
+        key(KeyCode::Char(c))
+    }
+
+    #[test]
+    fn test_normal_mode_movement() {
+        let mut state = VimState::new();
+        let mut field = FieldState::new("label", "hello world");
+        field.cursor = 0;
+
+        let _ = state.handle_normal(key_char('l'), &mut field);
+        assert_eq!(field.cursor, 1);
+
+        let _ = state.handle_normal(key_char('l'), &mut field);
+        assert_eq!(field.cursor, 2);
+
+        let _ = state.handle_normal(key_char('h'), &mut field);
+        assert_eq!(field.cursor, 1);
+
+        let _ = state.handle_normal(key_char('w'), &mut field);
+        assert_eq!(field.cursor, 6);
+
+        let _ = state.handle_normal(key_char('b'), &mut field);
+        assert_eq!(field.cursor, 0);
+    }
+
+    #[test]
+    fn test_normal_mode_delete() {
+        let mut state = VimState::new();
+        let mut field = FieldState::new("label", "hello world");
+        field.cursor = 0;
+
+        let _ = state.handle_normal(key_char('d'), &mut field);
+        let _ = state.handle_normal(key_char('w'), &mut field);
+        assert_eq!(field.value, " world");
+        assert_eq!(field.cursor, 0);
+
+        let _ = state.handle_normal(key_char('x'), &mut field);
+        assert_eq!(field.value, "world");
+        assert_eq!(field.cursor, 0);
+    }
+
+    #[test]
+    fn test_insert_mode() {
+        let mut state = VimState::new();
+        let mut field = FieldState::new("label", "");
+        
+        let _ = state.handle_insert(key_char('h'), &mut field);
+        let _ = state.handle_insert(key_char('i'), &mut field);
+        assert_eq!(field.value, "hi");
+        assert_eq!(field.cursor, 2);
+
+        let _ = state.handle_insert(key(KeyCode::Backspace), &mut field);
+        assert_eq!(field.value, "h");
+        assert_eq!(field.cursor, 1);
+    }
+}
